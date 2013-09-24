@@ -67,6 +67,10 @@ llvm::FunctionType* ExternalFunction::getLLVMFunctionType() const {
         it != ie; ++it)
     {
         llvm::Type *type;
+
+        if (it->ext.padding)
+            argTypes.push_back(it->ext.padding);
+
         if (it->ext.isIndirect()) {
             type = llvmPointerType(it->type);
         } else {
@@ -186,6 +190,13 @@ void ExternalFunction::loadArgument(ArgInfo info,
         llArgs.push_back(cv->llValue);
     } else {
         llvm::Type *bitcastType = info.ext.type;
+        llvm::Type *paddingType = info.ext.padding;
+
+        if (paddingType) {
+            llvm::Value *llv = llvm::UndefValue::get(paddingType);
+            llArgs.push_back(llv);
+        }
+
         if (bitcastType != NULL) {
             llvm::Value *llArg = ctx->builder->CreateBitCast(cv->llValue,
                 llvm::PointerType::getUnqual(bitcastType));
@@ -1036,9 +1047,7 @@ struct Mips32_ExternalTarget : public ExternalTarget {
 
     void coerceToIntArgs(size_t tySize, vector<llvm::Type*> &argList) const;
     llvm::Type* getPaddingType(size_t align, size_t offset) const;
-    llvm::Type* getLLVMWordType(TypePtr type,
-                                llvm::Type *padding,
-                                bool coercion) const;
+    llvm::Type* getLLVMWordType(TypePtr type) const;
     ExtArgInfo classifyArgumentType(TypePtr type, size_t &offset);
     ExtArgInfo classifyReturnType(TypePtr type);
 
@@ -1120,20 +1129,11 @@ llvm::Type* Mips32_ExternalTarget::getPaddingType(size_t align,
     return NULL;
 }
 
-llvm::Type* Mips32_ExternalTarget::getLLVMWordType(TypePtr type,
-                                                   llvm::Type *padding,
-                                                   bool coercion) const {
+llvm::Type* Mips32_ExternalTarget::getLLVMWordType(TypePtr type) const {
     size_t tySize = typeSize(type) * 8;
     vector<llvm::Type*> argList;
 
-    if (padding) {
-        argList.push_back(padding);
-    }
-    if (coercion) {
-        coerceToIntArgs(tySize, argList);
-    } else {
-        argList.push_back(llvmType(type));
-    }
+    coerceToIntArgs(tySize, argList);
 
     llvm::StructType *llType = llvm::StructType::get(
         llvm::getGlobalContext(), argList);
@@ -1152,16 +1152,15 @@ ExtArgInfo Mips32_ExternalTarget::classifyArgumentType(
     offset = alignedUpTo(offset, align);
     offset += alignedUpTo(tySize, align * 8) / 8;
 
-    llvm::Type *padding = getPaddingType(align, origOffset);
+    llvm::Type *padding = NULL;
     llvm::Type *llType = NULL;
 
     if (!canPassThrough(type)) {
-        llType = getLLVMWordType(type, padding, true);
-    } else if (padding) {
-        llType = getLLVMWordType(type, padding, false);
+        padding = getPaddingType(align, origOffset);
+        llType = getLLVMWordType(type);
     }
 
-    return ExtArgInfo::getDirect(llType);
+    return ExtArgInfo::getDirect(llType, padding);
 }
 
 ExtArgInfo Mips32_ExternalTarget::classifyReturnType(TypePtr type) {
@@ -1179,7 +1178,7 @@ ExtArgInfo Mips32_ExternalTarget::classifyReturnType(TypePtr type) {
                 VecType *vecType = (VecType *)type.ptr();
                 if (vecType->elementType->typeKind != FLOAT_TYPE) {
                     return ExtArgInfo::getDirect(
-                        getLLVMWordType(type, NULL, true));
+                        getLLVMWordType(type));
                 }
             }
         }

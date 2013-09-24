@@ -14,15 +14,16 @@ struct ExtArgInfo {
 
     Kind kind;
     llvm::Type *type;
+    llvm::Type *padding;
 
-    ExtArgInfo(enum Kind k = Direct, llvm::Type *ll = NULL)
-        : kind(k), type(ll) {}
+    ExtArgInfo(enum Kind k = Direct, llvm::Type *ll = NULL, llvm::Type *pad = NULL)
+        : kind(k), type(ll), padding(pad) {}
 
-    static ExtArgInfo getDirect(llvm::Type* ll = NULL) {
-        return ExtArgInfo(Direct, ll);
+    static ExtArgInfo getDirect(llvm::Type* ll = NULL, llvm::Type* pad = NULL) {
+        return ExtArgInfo(Direct, ll, pad);
     }
     static ExtArgInfo getIndirect() {
-        return ExtArgInfo(Indirect, NULL);
+        return ExtArgInfo(Indirect, NULL, NULL);
     }
 
     bool isDirect() const { return kind == Direct; }
